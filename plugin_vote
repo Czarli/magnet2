@@ -1,0 +1,151 @@
+"""vote kick vote ban
+ 
+required_votes=len(bot.roster[room])/4
+------------
+ 
+jesli ilosc glosujacych nie jest wieksza niz 1/4 zalogowanych zrezygnuj z glosowania
+ 
+ 
+ 
+1. sledzenie zmiany nicku
+2. jedno glosowanie na raz
+3. 
+ 
+ 
+ 
+kazda osoba moze tylko raz glosowac
+ 
+ 
+ 
+ 
+ 
+ 
+#voteup
+ 
+ 
+ 
+"""
+ 
+ 
+import time
+from magnet_api import *
+from magnet_utils import *
+from magnet2  import *
+ 
+ 
+lastkicked = {}
+kickvoted = {}
+ 
+def timer_kickvote(bot, arg):
+   
+   
+  for room in kickvoted.keys():
+    if time.time() >= kickvoted[room]['time']:
+      nick = kickvoted[room]['nick']
+   
+       
+      
+      if bot.in_roster(room, nick):
+          if kickvoted[room]['voters'] < (kickvoted[room]['in_room']/4):
+            bot.send_room_message(room,"zamalo glosujacych")
+            return "zamalo glosujacych"
+ 
+      bot.send_room_message(room, "has failed to cut the wire in time! The kick explodes!")
+      bot.client.send(iq_set_role(room, nick, 'none', ''))
+     
+      del kickvoted[room]
+ 
+kickvote_timer = TimedEventHandler(timer_kickvote, 2)
+ 
+#zachowac
+def event_nick_changed(bot, (presence, room, nick, newnick)):
+  # bug/feature: reattaching the kick to different person if original
+  # has left and someone else changed their nick to kickvoted person
+  if room in kickvoted and nick == kickvoted[room]['nick']:
+    kickvoted[room]['nick'] = newnick
+ 
+def command_kickvote(bot, room, nick, access_level, parameters, message):
+  if not parameters: return 'Target expected.'
+  if message.getType() != 'groupchat':
+    return 'Sneaky! This works only in the groupchat.'  #zachowac
+  if room in kickvoted:
+    if nick == kickvoted[room]['nick']:
+      return 'info- jestes teraz sam sadzany'
+    return 'Only one victim at a time!'
+  target = parameters
+  if target[-1] == ' ': target = target[0:-1]
+  if target == bot.self_nick[room]:
+    return "Don't even think about it."
+   
+  if not bot.in_roster(room, target):
+    return "I don't see %s here."%(target)
+  #dopisac wiecej warunkow np nie mozna wywalic moderatora i wyzej 
+  #
+   
+   
+  kicktimer = 60
+  kicktime = time.time() + kicktimer
+#to wyzej git
+  
+#wszystko nizej to rozpoczecie glosowania
+ 
+  lastkicked[room] = target
+  kickvoted[room] = {
+    'nick': target,
+    'votesup': 0,
+    'time': kicktime,
+    'votesdown': 0, 
+    'voters': 0,
+    'in_room':len(bot.roster[room])
+  }
+  return (
+    "Uwaga rozpoczeto glosowanie nad wyrzuceniem %s glosowanie potrwa %d sekund"
+    "mozecie glosowac za wyrzuceniem lub przeciwko komendami voteup oraz voteban"
+  )%(target, kicktimer)
+ 
+ 
+def command_voteup(bot, room, nick, access_level, parameters, message):
+  if not room in kickvoted:
+    return 'Nie ma aktualnie glosowania'
+  if not parameters: return 'Nick expected.'
+  if message.getType() != 'groupchat':
+    return 'Sneaky! This works only in the groupchat.'
+######## cialo komendy 
+  kickvoted[room]['voters'] = kickvoted[room]['voters'] + 1
+  kickvoted[room]['votesdown'] = kickvoted[room]['votesup'] + 1
+ 
+########
+  return 'Glos za wyrzuceniem %s dodany, razem glosow za %d przeciw %s'%(target, votesup, votesdown,)
+ 
+def command_votedown(bot, room, nick, access_level, parameters, message):
+  if not room in kickvoted:
+    return 'Nie ma aktualnie glosowania'
+  if not parameters: return 'Nick expected.'
+  if message.getType() != 'groupchat':
+    return 'Sneaky! This works only in the groupchat.'
+########  cialo komendy
+  kickvoted[room]['voters'] = kickvoted[room]['voters'] + 1
+  kickvoted[room]['votesdown'] = kickvoted[room]['votesdown'] + 1
+ 
+########
+  return 'Glos przeciwko wyrzuceniu %s dodany, razem glosow za %d przeciw %s'%(target, votesup, votesdown,)
+ 
+def command_cancelvote(bot, room, nick, access_level, parameters, message):
+  if not room in kickvoted:
+    return 'Brak glosowania.'
+  del kickvoted[room]
+  return 'Glosowanie zerwane.'  #skonczona
+ 
+  #poprawic dostepy
+def load(bot):
+  bot.add_command('kickvote', command_kickvote, LEVEL_GUEST, 'kickvote')
+  bot.add_command('voteup', command_voteup, LEVEL_GUEST, 'kickvote')
+  bot.add_command('votedown', command_votedown, LEVEL_GUEST, 'kickvote')
+  bot.add_command('cancelvote', command_cancelvote, LEVEL_ADMIN, 'kickvote')
+  bot.timed_events.add(kickvote_timer)
+ 
+def unload(bot):
+  bot.timed_events.remove(kickvote_timer)
+   
+def info(bot):
+  return 'kickvote plugin v1.0.1'
